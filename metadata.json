@@ -1,0 +1,5 @@
+{
+  "name": "Infinite Draggable Shader Gallery",
+  "description": "An interactive, infinite-scroll gallery powered by Three.js and GLSL shaders, allowing users to drag and explore a grid of projects.",
+  "requestFramePermissions": []
+}
