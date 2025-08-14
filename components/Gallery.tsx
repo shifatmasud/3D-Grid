@@ -198,8 +198,6 @@ const Gallery: React.FC = () => {
             targetZoom = 0.3;
             targetDistortionStrength = 0.0;
             isZoomed = true;
-            
-            setVideoState(null);
         }
     };
 
