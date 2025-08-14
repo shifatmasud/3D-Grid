@@ -1,10 +1,204 @@
 
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { projects } from '../data';
-import { vertexShader, fragmentShader } from '../gl/shaders';
 
-const Gallery: React.FC = () => {
+// Note for Framer users: Ensure the 'three' package is added as a dependency in your project's package.json file.
+
+// --- INLINED DEPENDENCIES ---
+
+// From: types.ts
+interface Project {
+  title: string;
+  image: string;
+  year: number;
+  href: string;
+  video?: string;
+}
+
+// From: data/index.ts
+const projects: Project[] = [
+  {
+    title: "Motion Study",
+    image: "https://picsum.photos/seed/img1/512/512",
+    year: 2024,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+  },
+  {
+    title: "Idle Form",
+    image: "https://picsum.photos/seed/img2/512/512",
+    year: 2023,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+  },
+  {
+    title: "Blur Signal",
+    image: "https://picsum.photos/seed/img3/512/512",
+    year: 2024,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+  },
+  {
+    title: "Still Drift",
+    image: "https://picsum.photos/seed/img4/512/512",
+    year: 2023,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+  },
+  {
+    title: "Core Motion",
+    image: "https://picsum.photos/seed/img5/512/512",
+    year: 2022,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+  },
+  {
+    title: "Flux Pattern",
+    image: "https://picsum.photos/seed/img6/512/512",
+    year: 2024,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+  },
+  {
+    title: "Static Echo",
+    image: "https://picsum.photos/seed/img7/512/512",
+    year: 2021,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
+  },
+  {
+    title: "Vector Wave",
+    image: "https://picsum.photos/seed/img8/512/512",
+    year: 2023,
+    href: "#",
+    video: "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+  },
+];
+
+// From: gl/shaders.ts
+const vertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const fragmentShader = `
+  uniform vec2 uOffset;
+  uniform vec2 uResolution;
+  uniform vec4 uBorderColor;
+  uniform vec4 uHoverColor;
+  uniform vec4 uBackgroundColor;
+  uniform vec2 uMousePos;
+  uniform float uZoom;
+  uniform float uCellSize;
+  uniform float uTextureCount;
+  uniform sampler2D uImageAtlas;
+  uniform sampler2D uTextAtlas;
+  uniform float uDistortionStrength;
+  uniform sampler2D uActiveVideo;
+  uniform vec2 uHoveredCellId;
+  uniform bool uIsVideoActive;
+  varying vec2 vUv;
+
+  void main() {
+    vec2 screenUV = (vUv - 0.5) * 2.0;
+    float radius = length(screenUV);
+    float distortion = 1.0 - uDistortionStrength * 0.08 * radius * radius;
+    vec2 distortedUV = screenUV * distortion;
+    vec2 aspectRatio = vec2(uResolution.x / uResolution.y, 1.0);
+    vec2 worldCoord = distortedUV * aspectRatio;
+    worldCoord *= uZoom;
+    worldCoord += uOffset;
+    
+    vec2 cellPos = worldCoord / uCellSize;
+    vec2 cellId = floor(cellPos);
+    vec2 cellUV = fract(cellPos);
+
+    vec2 mouseScreenUV = (uMousePos / uResolution) * 2.0 - 1.0;
+    mouseScreenUV.y = -mouseScreenUV.y;
+    float mouseRadius = length(mouseScreenUV);
+    float mouseDistortion = 1.0 - uDistortionStrength * 0.08 * mouseRadius * mouseRadius;
+    vec2 mouseDistortedUV = mouseScreenUV * mouseDistortion;
+    vec2 mouseWorldCoord = mouseDistortedUV * aspectRatio;
+    mouseWorldCoord *= uZoom;
+    mouseWorldCoord += uOffset;
+
+    // Organic hover effect based on exact mouse distance
+    vec2 cellCenterWorld = (cellId + 0.5) * uCellSize;
+    float distToMouse = length(mouseWorldCoord - cellCenterWorld);
+    float hoverRadius = uCellSize * 1.5;
+    float hoverIntensity = pow(smoothstep(hoverRadius, 0.0, distToMouse), 2.0);
+    
+    bool isHovered = hoverIntensity > 0.0 && uMousePos.x > 0.0;
+
+    vec3 backgroundColor = uBackgroundColor.rgb;
+    if (isHovered) {
+      backgroundColor = mix(uBackgroundColor.rgb, uHoverColor.rgb, hoverIntensity * uHoverColor.a);
+    }
+
+    float lineWidth = 0.005;
+    float gridX = smoothstep(0.0, lineWidth, cellUV.x) * smoothstep(1.0, 1.0 - lineWidth, cellUV.x);
+    float gridY = smoothstep(0.0, lineWidth, cellUV.y) * smoothstep(1.0, 1.0 - lineWidth, cellUV.y);
+    float gridMask = gridX * gridY;
+
+    float hoverScale = 1.0 + hoverIntensity * 0.05;
+    float imageSize = 0.6;
+    float imageBorder = (1.0 - imageSize * hoverScale) * 0.5;
+    vec2 imageUV = (cellUV - imageBorder) / (imageSize * hoverScale);
+    float edgeSmooth = 0.01;
+    vec2 imageMask = smoothstep(-edgeSmooth, edgeSmooth, imageUV) * smoothstep(1.0 + edgeSmooth, 1.0 - edgeSmooth, imageUV);
+    float imageAlpha = imageMask.x * imageMask.y;
+    
+    bool inImageArea = imageUV.x > 0.0 && imageUV.x < 1.0 && imageUV.y > 0.0 && imageUV.y < 1.0;
+    
+    float textHeight = 0.08;
+    float textY = 0.05;
+    bool inTextArea = cellUV.x > 0.05 && cellUV.x < 0.95 && cellUV.y > textY && cellUV.y < textY + textHeight;
+
+    float texIndex = mod(floor(cellId.x) + floor(cellId.y) * 3.0, uTextureCount);
+    vec3 color = backgroundColor;
+
+    if (inImageArea && imageAlpha > 0.0) {
+      vec3 imageColor;
+      bool isHoveredCell = uIsVideoActive && cellId.x == uHoveredCellId.x && cellId.y == uHoveredCellId.y;
+
+      if (isHoveredCell) {
+          imageColor = texture2D(uActiveVideo, imageUV).rgb;
+      } else {
+          float atlasSize = ceil(sqrt(uTextureCount));
+          vec2 atlasPos = vec2(mod(texIndex, atlasSize), floor(texIndex / atlasSize));
+          vec2 atlasUV = (atlasPos + imageUV) / atlasSize;
+          atlasUV.y = 1.0 - atlasUV.y;
+          imageColor = texture2D(uImageAtlas, atlasUV).rgb;
+      }
+      color = mix(color, imageColor, imageAlpha);
+    }
+
+    if (inTextArea) {
+      vec2 textCoord = vec2((cellUV.x - 0.05) / 0.9, (cellUV.y - textY) / textHeight);
+      textCoord.y = 1.0 - textCoord.y;
+      float atlasSize = ceil(sqrt(uTextureCount));
+      vec2 atlasPos = vec2(mod(texIndex, atlasSize), floor(texIndex / atlasSize));
+      vec2 atlasUV = (atlasPos + textCoord) / atlasSize;
+      vec4 textColor = texture2D(uTextAtlas, atlasUV);
+      textColor.rgb = mix(textColor.rgb, vec3(1.0), hoverIntensity * 0.5);
+      color = mix(color, textColor.rgb, textColor.a);
+    }
+
+    vec3 borderColorRGB = uBorderColor.rgb;
+    float borderAlpha = uBorderColor.a;
+    color = mix(color, borderColorRGB, (1.0 - gridMask) * borderAlpha);
+
+    float fade = 1.0 - smoothstep(1.2, 1.8, radius);
+    gl_FragColor = vec4(color * fade, 1.0);
+  }
+`;
+
+// --- FRAMER CODE COMPONENT ---
+
+const GalleryComponent: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
@@ -57,7 +251,7 @@ const Gallery: React.FC = () => {
       videoElement.playsInline = true;
       videoElement.crossOrigin = 'anonymous';
       videoElement.style.display = 'none';
-      document.body.appendChild(videoElement);
+      currentMount.appendChild(videoElement); // Append to component, not body
       videoRef.current = videoElement;
       videoTextureRef.current = new THREE.VideoTexture(videoRef.current);
       videoTextureRef.current.minFilter = THREE.LinearFilter;
@@ -130,7 +324,6 @@ const Gallery: React.FC = () => {
       const project = getProject(cellId);
       const newSrc = project?.video;
 
-      // Case 1: No video to play. Pause the current one.
       if (!newSrc) {
         if (currentNonce === videoRequestNonce) {
           plane.material.uniforms.uIsVideoActive.value = false;
@@ -141,9 +334,8 @@ const Gallery: React.FC = () => {
         return;
       }
       
-      // Case 2: There is a video to play.
       try {
-        if (currentNonce !== videoRequestNonce) return; // Stale request
+        if (currentNonce !== videoRequestNonce) return;
 
         if (video.src !== newSrc || video.error) {
           video.src = newSrc;
@@ -152,7 +344,6 @@ const Gallery: React.FC = () => {
 
         plane.material.uniforms.uHoveredCellId.value.copy(cellId!);
         
-        // Don't restart if it's the same video and already playing.
         if (video.paused) {
            await video.play();
         }
@@ -165,7 +356,7 @@ const Gallery: React.FC = () => {
 
       } catch (error: any) {
         if (error.name === 'AbortError') {
-          // Expected error, safe to ignore.
+          // Expected error
         } else if (currentNonce === videoRequestNonce) {
           console.error("Video play failed:", error);
           plane.material.uniforms.uIsVideoActive.value = false;
@@ -260,7 +451,6 @@ const Gallery: React.FC = () => {
     const onPointerDown = (event: MouseEvent | TouchEvent) => {
         isPotentialClick = true;
         isDragging = true;
-        document.body.classList.add('dragging');
         const evt = 'touches' in event ? event.touches[0] : event;
         previousMousePosition = { x: evt.clientX, y: evt.clientY };
         clickStartPosition = { x: evt.clientX, y: evt.clientY };
@@ -316,20 +506,14 @@ const Gallery: React.FC = () => {
     const onPointerUp = (event: MouseEvent | TouchEvent) => {
         if (isPotentialClick) {
             const evt = 'changedTouches' in event ? event.changedTouches[0] : event;
-            if (!isZoomed) {
-                handleClick(new THREE.Vector2(evt.clientX, evt.clientY));
-            } else {
-                handleClick(new THREE.Vector2(evt.clientX, evt.clientY));
-            }
+            handleClick(new THREE.Vector2(evt.clientX, evt.clientY));
         }
         isDragging = false;
         isPotentialClick = false;
-        document.body.classList.remove('dragging');
     };
 
     const onPointerLeave = () => {
         isDragging = false;
-        document.body.classList.remove('dragging');
         targetMousePos.set(-1, -1);
         setVideoState(null);
         hoveredCellIdRef.current = null;
@@ -363,7 +547,7 @@ const Gallery: React.FC = () => {
     };
 
     const onWindowResize = () => {
-      if (!renderer || !camera || !plane) return;
+      if (!renderer || !camera || !plane || !currentMount) return;
       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
       plane.material.uniforms.uResolution.value.set(currentMount.clientWidth, currentMount.clientHeight);
     };
@@ -428,14 +612,14 @@ const Gallery: React.FC = () => {
         if (renderer) {
             currentMount.removeChild(renderer.domElement);
         }
-      }
-      if (videoElement && document.body.contains(videoElement)) {
-          document.body.removeChild(videoElement);
+        if (videoElement && currentMount.contains(videoElement)) {
+            currentMount.removeChild(videoElement);
+        }
       }
     };
   }, []);
 
-  return <div ref={mountRef} className="w-screen h-screen cursor-grab" />;
+  return <div ref={mountRef} style={{ width: '100%', height: '100%', overflow: 'hidden' }} />;
 };
 
-export default Gallery;
+export default GalleryComponent;

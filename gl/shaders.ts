@@ -48,10 +48,12 @@ export const fragmentShader = `
     mouseWorldCoord *= uZoom;
     mouseWorldCoord += uOffset;
 
-    vec2 cellCenter = cellId + 0.5;
-    vec2 mouseCellCenter = floor(mouseWorldCoord / uCellSize) + 0.5;
-    float cellDistance = length(cellCenter - mouseCellCenter);
-    float hoverIntensity = 1.0 - smoothstep(0.4, 0.6, cellDistance);
+    // Organic hover effect based on exact mouse distance
+    vec2 cellCenterWorld = (cellId + 0.5) * uCellSize;
+    float distToMouse = length(mouseWorldCoord - cellCenterWorld);
+    float hoverRadius = uCellSize * 1.5;
+    float hoverIntensity = pow(smoothstep(hoverRadius, 0.0, distToMouse), 2.0);
+    
     bool isHovered = hoverIntensity > 0.0 && uMousePos.x > 0.0;
 
     vec3 backgroundColor = uBackgroundColor.rgb;
